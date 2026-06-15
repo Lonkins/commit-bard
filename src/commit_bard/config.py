@@ -11,10 +11,9 @@ Secrets (API keys) are NEVER read from a config file — only from the
 environment (see ``provider.py``). Storing keys in dotfiles that may be
 committed is a security footgun we refuse on purpose.
 
-TOML file support is wired here but is only *active* on Python 3.11+ (which has
-``tomllib`` in the stdlib). On 3.9/3.10 the file layers are skipped gracefully;
-a small vendored TOML subset parser could add it there later. Until then,
-defaults + environment fully drive behaviour, which covers current needs.
+TOML files are parsed by the stdlib ``tomllib`` on Python 3.11+, and by a tiny
+vendored subset parser ([`toml_min`](toml_min.py)) on 3.9/3.10 — so file config
+works everywhere without adding a dependency.
 """
 
 from __future__ import annotations
@@ -27,9 +26,9 @@ from typing import Any, Dict, Optional
 from .styles import DEFAULT_STYLE
 
 try:  # Python 3.11+
-    import tomllib  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover - exercised on <3.11 only
-    tomllib = None  # type: ignore
+    import tomllib as _toml  # type: ignore
+except ModuleNotFoundError:  # Python 3.9/3.10
+    from . import toml_min as _toml  # type: ignore
 
 
 # Truthy string values for env-var booleans.
@@ -70,8 +69,9 @@ def _repo_config_path() -> Optional[Path]:
             capture_output=True,
             text=True,
             check=False,
+            timeout=5,  # never let a stalled git hang config.load() in the hook
         )
-    except FileNotFoundError:
+    except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
     if result.returncode != 0:
         return None
@@ -93,14 +93,20 @@ _TOML_MAP = {
     "hook_on_error": ("hook", "on_error"),
 }
 
+# SECURITY: a checked-in repo `.commit-bard.toml` may theme the verse, but must
+# NOT control where model calls go — otherwise a malicious repo could set
+# base_url to an attacker host and exfiltrate the API key + diff when the hook
+# (or the CLI) runs there. Provider routing comes from user config + env only.
+_REPO_DENIED_KEYS = ("provider", "model", "base_url")
+
 
 def _load_toml(path: Optional[Path]) -> Dict[str, Any]:
     """Read a config TOML into a flat overrides dict (best-effort)."""
-    if path is None or tomllib is None or not path.is_file():
+    if path is None or not path.is_file():
         return {}
     try:
         with path.open("rb") as handle:
-            data = tomllib.load(handle)
+            data = _toml.load(handle)
     except (OSError, ValueError):
         # A malformed config file should never crash the Bard.
         return {}
@@ -137,9 +143,28 @@ def _env_overrides() -> Dict[str, Any]:
 
 
 def _coerce(overrides: Dict[str, Any]) -> Dict[str, Any]:
-    """Drop keys that aren't real Config fields (defensive against typos)."""
+    """Keep only real Config fields, coercing/validating to the field's type.
+
+    A malformed value (e.g. ``max_diff_chars = "lots"`` in a TOML file) is
+    dropped so the default stands, rather than flowing through untyped and
+    blowing up later (a non-int ``max_diff_chars`` would crash truncation).
+    """
+    defaults = Config()
     valid = {f.name for f in fields(Config)}
-    return {k: v for k, v in overrides.items() if k in valid}
+    result: Dict[str, Any] = {}
+    for key, value in overrides.items():
+        if key not in valid:
+            continue
+        default = getattr(defaults, key)
+        if isinstance(default, bool):  # check bool before int (bool is an int)
+            value = value.strip().lower() in _TRUTHY if isinstance(value, str) else bool(value)
+        elif isinstance(default, int):
+            try:
+                value = int(value)
+            except (TypeError, ValueError):
+                continue  # bad number -> keep the default
+        result[key] = value
+    return result
 
 
 def load() -> Config:
@@ -149,6 +174,9 @@ def load() -> Config:
     """
     merged: Dict[str, Any] = {}
     merged.update(_load_toml(_user_config_path()))
-    merged.update(_load_toml(_repo_config_path()))
+    repo = _load_toml(_repo_config_path())
+    for denied in _REPO_DENIED_KEYS:
+        repo.pop(denied, None)  # repo files cannot redirect provider routing
+    merged.update(repo)
     merged.update(_env_overrides())
     return Config(**_coerce(merged))

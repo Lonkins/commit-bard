@@ -24,12 +24,24 @@ def test_in_git_repo_false_on_nonzero(monkeypatch):
     assert git_io.in_git_repo() is False
 
 
-def test_in_git_repo_false_when_git_missing(monkeypatch):
-    def boom(args):
+def test_run_git_maps_missing_git_to_failure(monkeypatch):
+    def boom(*args, **kwargs):
         raise FileNotFoundError("git")
 
-    monkeypatch.setattr(git_io, "_run_git", boom)
+    monkeypatch.setattr(git_io.subprocess, "run", boom)
+    result = git_io._run_git(["rev-parse"])
+    assert result.returncode != 0  # synthetic failure, no exception
     assert git_io.in_git_repo() is False
+
+
+def test_run_git_maps_timeout_to_failure(monkeypatch):
+    def boom(*args, **kwargs):
+        raise git_io.subprocess.TimeoutExpired(cmd="git", timeout=1)
+
+    monkeypatch.setattr(git_io.subprocess, "run", boom)
+    assert git_io._run_git(["diff"]).returncode != 0  # a stalled git never hangs us
+    with pytest.raises(RuntimeError):
+        git_io.staged_diff()  # surfaces as a normal failure the hook will swallow
 
 
 def test_staged_diff_returns_stdout(monkeypatch):

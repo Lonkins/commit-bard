@@ -92,22 +92,26 @@ def test_real_staged_diff_happy_path(clean_env, capsys, monkeypatch):
 # --- provider failure path -------------------------------------------------
 
 
-def test_provider_error_returns_runtime_error(clean_env, capsys, monkeypatch):
+def test_provider_error_falls_back_to_plain(clean_env, capsys, monkeypatch):
+    # Graceful degradation: a real-provider failure still yields a usable
+    # message and exit 0 (never leave the user stuck).
     def boom(*args, **kwargs):
         raise provider.ProviderError("boom")
 
     monkeypatch.setattr(compose, "compose", boom)
     rc = cli.main(["--sample", "--style", "haiku"])
     captured = capsys.readouterr()
-    assert rc == 1
-    assert "Provider error" in captured.err
-    assert captured.out == ""
+    assert rc == 0
+    assert captured.out.strip(), "expected a fallback message on stdout"
+    assert "falling back" in captured.err
 
 
-def test_palette_provider_error_returns_runtime_error(clean_env, capsys, monkeypatch):
+def test_palette_provider_error_falls_back_to_plain(clean_env, capsys, monkeypatch):
     def boom(*args, **kwargs):
         raise provider.ProviderError("boom")
 
     monkeypatch.setattr(compose, "compose", boom)
     rc = cli.main(["--sample", "2"])
-    assert rc == 1
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert captured.out.count("──") >= 2
