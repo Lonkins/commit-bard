@@ -15,5 +15,11 @@ venv/
 .mypy_cache/
 .ruff_cache/
 
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
 # OS noise
 .DS_Store

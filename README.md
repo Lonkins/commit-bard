@@ -7,10 +7,10 @@ literary flair — haiku, sea shanty, limerick, epic verse, ballad, pirate,
 corporate-buzzword, noir. Whimsy is opt-in. It runs with **zero setup** in an
 offline mock mode, and calls a real model the moment you add an API key.
 
-> **Status: alpha.** The standalone CLI works today (`--sample`,
-> `--list-styles`, and real-model verse when an API key is set). A
-> `prepare-commit-msg` git hook and a default "dual" mode — a clean
-> Conventional-Commit subject line with the verse in the body — are in progress.
+> **Status: alpha.** The CLI, the default **dual mode** (a clean
+> Conventional-Commit subject line with the verse in the body), and the
+> `prepare-commit-msg` **git hook** all work today. A repo "wrapped" digest and
+> a shareable gallery are still to come.
 
 ## Try it in 30 seconds
 
@@ -55,6 +55,36 @@ The artifact goes to **stdout** (pipe-clean), so you can wire it straight in:
 git commit -m "$(commit-bard --style limerick)"
 ```
 
+## Modes
+
+```bash
+commit-bard --mode dual    # subject line + verse in the body (the default)
+commit-bard --mode verse   # just the verse
+commit-bard --mode plain   # a conventional subject line only, no verse
+```
+
+**Dual** keeps it useful: a clean `type(scope): summary` line your team can read
+at a glance, with the verse tucked underneath. Offline (or if a model reply
+can't be parsed) the subject is synthesized from the diff's shape, so you always
+get a committable message.
+
+## Install the git hook
+
+Wire it into `git commit` so every commit *can* be versified — with an easy
+escape hatch. The hook **never blocks a commit**: on any error or timeout it
+falls back to a plain message (or leaves yours untouched), and always exits 0.
+
+```bash
+commit-bard install-hook      # writes a prepare-commit-msg hook (backs up any existing one)
+git commit                    # opens your editor with a dual message prefilled
+
+BARD_SKIP=1 git commit        # skip the Bard for one commit
+commit-bard uninstall-hook    # remove it (restores your backup)
+```
+
+It leaves merges, squashes, amends, and `-m`/`-F` commits alone, and is aware of
+`core.hooksPath` (Husky/pre-commit).
+
 ## Providers & configuration
 
 Configured entirely by environment variables. **Auto-detect:** no key → mock;
@@ -75,6 +105,24 @@ one key → it just works.
   `COMMIT_BARD_MODEL`. Don't treat the built-in defaults as authoritative.
 - **API keys are read from the environment only**, never written to a config
   file.
+
+### Config file (optional)
+
+Set non-secret defaults in a TOML file — `~/.config/commit-bard/config.toml`
+(user) or `.commit-bard.toml` at the repo root (repo overrides user). Env vars
+and CLI flags still override both. Resolution order: defaults → user → repo →
+env → flags. **Never put API keys here.**
+
+```toml
+[bard]
+style = "shanty"
+mode  = "dual"          # dual | verse | plain
+max_diff_chars = 6000   # big diffs are summarized past this budget
+
+[hook]
+on_error  = "plain"     # "plain" | "skip" — the hook never blocks a commit
+timeout_s = 12
+```
 
 ## Privacy — read this
 

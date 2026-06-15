@@ -5,21 +5,21 @@ UX contract:
     stderr = chatter (the mock-mode notice, warnings, errors).
 
 Exit codes:
-    0  success
-    1  runtime problem (no staged changes, a real-provider failure)
-    2  usage problem (unknown style)
+    0  success (and ALWAYS for the internal --hook path)
+    1  runtime problem (no staged changes, hook-management error)
+    2  usage problem (unknown style/mode)
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
-from dataclasses import replace
 from typing import List, Optional
 
-from . import __version__, compose, config, git_io, provider, styles
+from . import __version__, compose, config, git_io, hook, provider, styles
 
 _PROG = "commit-bard"
+_MODES = ("dual", "verse", "plain")
 
 _MOCK_NOTICE = (
     "# (mock mode — set a provider + API key for diff-aware verse; "
@@ -33,10 +33,14 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Your staged diff, returned as verse.",
         epilog="No API key? It still runs, in a charming offline mock mode.",
     )
+    parser.add_argument("--style", metavar="NAME", help="verse style (see --list-styles)")
     parser.add_argument(
-        "--style",
-        metavar="NAME",
-        help="verse style (default from config; see --list-styles)",
+        "--mode",
+        choices=_MODES,
+        help="dual (subject + verse, default), verse (verse only), or plain",
+    )
+    parser.add_argument(
+        "--dual", action="store_true", help="shortcut for --mode dual"
     )
     parser.add_argument(
         "--sample",
@@ -45,34 +49,23 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         const=1,
         default=None,
-        help="use a bundled diff so it runs with no repo/key; "
-        "optional N prints N styles side by side",
+        help="use a bundled diff (no repo/key needed); optional N prints N styles",
     )
     parser.add_argument(
-        "--list-styles",
-        action="store_true",
-        help="list the built-in styles and exit",
+        "--list-styles", action="store_true", help="list the built-in styles and exit"
     )
     parser.add_argument(
-        "--random-style",
-        action="store_true",
-        help="surprise me — pick a random style",
+        "--random-style", action="store_true", help="surprise me — pick a random style"
     )
-    parser.add_argument(
-        "--provider",
-        metavar="P",
-        help="one-off provider override (anthropic|openai-compatible|ollama|mock)",
-    )
-    parser.add_argument(
-        "--model",
-        metavar="M",
-        help="one-off model override",
-    )
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"{_PROG} {__version__}",
-    )
+    parser.add_argument("--provider", metavar="P", help="one-off provider override")
+    parser.add_argument("--model", metavar="M", help="one-off model override")
+    # Internal: invoked by the installed git hook. Hidden from --help.
+    parser.add_argument("--hook", metavar="MSGFILE", help=argparse.SUPPRESS)
+    parser.add_argument("--version", action="version", version=f"{_PROG} {__version__}")
+
+    subparsers = parser.add_subparsers(dest="command")
+    subparsers.add_parser("install-hook", help="install the prepare-commit-msg hook")
+    subparsers.add_parser("uninstall-hook", help="remove the prepare-commit-msg hook")
     return parser
 
 
@@ -81,6 +74,12 @@ def _print_styles() -> int:
     for name in styles.style_names():
         print(f"  {name.ljust(width)}  {styles.STYLES[name].blurb}")
     return 0
+
+
+def _resolve_mode(args: argparse.Namespace, cfg: config.Config) -> str:
+    if args.dual:
+        return "dual"
+    return args.mode or cfg.mode
 
 
 def _resolve_style_name(args: argparse.Namespace, cfg: config.Config) -> str:
@@ -92,10 +91,7 @@ def _resolve_style_name(args: argparse.Namespace, cfg: config.Config) -> str:
 
 
 def _get_diff(args: argparse.Namespace) -> Optional[str]:
-    """Return the diff to versify, or None if the caller should stop.
-
-    On the stop path the user-facing message has already gone to stderr.
-    """
+    """Return the diff to versify, or None if the caller should stop (msg on stderr)."""
     if args.sample is not None:
         return styles.SAMPLE_DIFF
     if not git_io.in_git_repo():
@@ -116,34 +112,53 @@ def _get_diff(args: argparse.Namespace) -> Optional[str]:
     return diff
 
 
-def _emit_mock_notice(cfg: provider.ProviderConfig) -> None:
-    if cfg.provider == "mock":
+def _emit_mock_notice(prov_cfg: provider.ProviderConfig) -> None:
+    if prov_cfg.provider == "mock":
         print(_MOCK_NOTICE, file=sys.stderr)
 
 
-def _run_single(style_name: str, diff: str, prov_cfg: provider.ProviderConfig) -> int:
-    style = styles.get_style(style_name)
+def _compose_or_fallback(
+    style: styles.Style,
+    diff: str,
+    mode: str,
+    cfg: config.Config,
+    prov_cfg: provider.ProviderConfig,
+) -> str:
+    """Compose a message, gracefully degrading to a plain line on provider failure."""
     try:
-        message = compose.compose(style, diff, config=prov_cfg)
+        return compose.compose(
+            style, diff, mode=mode, max_diff_chars=cfg.max_diff_chars, config=prov_cfg
+        )
     except provider.ProviderError as exc:
-        # On a real-provider failure, report cleanly rather than crashing.
-        print(f"Provider error: {exc}", file=sys.stderr)
-        return 1
+        print(
+            f"# (provider error: {exc}; falling back to a plain message)",
+            file=sys.stderr,
+        )
+        return compose.fallback_plain(diff)
+
+
+def _run_single(
+    style_name: str,
+    diff: str,
+    mode: str,
+    cfg: config.Config,
+    prov_cfg: provider.ProviderConfig,
+) -> int:
+    style = styles.get_style(style_name)
+    message = _compose_or_fallback(style, diff, mode, cfg, prov_cfg)
     _emit_mock_notice(prov_cfg)
     print(message)
     return 0
 
 
-def _run_sample_palette(count: int, diff: str, prov_cfg: provider.ProviderConfig) -> int:
+def _run_sample_palette(
+    count: int, diff: str, mode: str, cfg: config.Config, prov_cfg: provider.ProviderConfig
+) -> int:
     names = styles.style_names()[: max(1, count)]
     _emit_mock_notice(prov_cfg)
     for index, name in enumerate(names):
         style = styles.get_style(name)
-        try:
-            message = compose.compose(style, diff, config=prov_cfg)
-        except provider.ProviderError as exc:
-            print(f"Provider error: {exc}", file=sys.stderr)
-            return 1
+        message = _compose_or_fallback(style, diff, mode, cfg, prov_cfg)
         if index:
             print()
         print(f"── {name} ──")
@@ -151,22 +166,61 @@ def _run_sample_palette(count: int, diff: str, prov_cfg: provider.ProviderConfig
     return 0
 
 
+def _cmd_install_hook() -> int:
+    try:
+        target, notes = hook.install_hook()
+    except hook.HookError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    cfg = config.load()
+    print(f"Installed {hook.HOOK_NAME} hook -> {target}")
+    for note in notes:
+        print(f"  - {note}")
+    print(f"Active style/mode: {cfg.style} / {cfg.mode}")
+    print(
+        "Escape hatch: set BARD_SKIP=1 to skip a commit, "
+        "or run `commit-bard uninstall-hook` to remove."
+    )
+    return 0
+
+
+def _cmd_uninstall_hook() -> int:
+    try:
+        _, notes = hook.uninstall_hook()
+    except hook.HookError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    for note in notes:
+        print(f"  - {note}")
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    # Subcommands.
+    if args.command == "install-hook":
+        return _cmd_install_hook()
+    if args.command == "uninstall-hook":
+        return _cmd_uninstall_hook()
+
+    # Internal hook entry — always exits 0, never blocks a commit.
+    if args.hook:
+        return hook.run_hook(args.hook)
 
     if args.list_styles:
         return _print_styles()
 
     cfg = config.load()
-    style_name = _resolve_style_name(args, cfg)
+    mode = _resolve_mode(args, cfg)
+    if mode not in _MODES:
+        print(f"Unknown mode {mode!r}. Valid modes: {', '.join(_MODES)}.", file=sys.stderr)
+        return 2
 
-    # Validate the chosen style early, before any model call.
+    style_name = _resolve_style_name(args, cfg)
     if style_name not in styles.STYLES:
-        print(
-            f"Unknown style {style_name!r}. Valid styles:",
-            file=sys.stderr,
-        )
+        print(f"Unknown style {style_name!r}. Valid styles:", file=sys.stderr)
         for name in styles.style_names():
             print(f"  {name}", file=sys.stderr)
         return 2
@@ -177,11 +231,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     prov_cfg = provider.resolve(provider=args.provider, model=args.model)
 
-    # A multi-style palette (--sample N, N>1) is a demo/screenshot affordance.
     if args.sample is not None and args.sample > 1:
-        return _run_sample_palette(args.sample, diff, prov_cfg)
-
-    return _run_single(style_name, diff, prov_cfg)
+        return _run_sample_palette(args.sample, diff, mode, cfg, prov_cfg)
+    return _run_single(style_name, diff, mode, cfg, prov_cfg)
 
 
 if __name__ == "__main__":  # pragma: no cover
