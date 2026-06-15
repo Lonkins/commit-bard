@@ -2,7 +2,7 @@
 
 import subprocess
 
-from commit_bard import cli, compose, git_io, wrapped
+from commit_bard import cli, compose, git_io, history, wrapped
 
 
 def _commit(hash="abc123def0", subject="feat: x", body="", date="2026-06-15T10:00:00+00:00", author="Lonkins"):
@@ -136,6 +136,35 @@ def test_wrapped_top_truncates(monkeypatch):
 def test_wrapped_top_zero_is_empty(monkeypatch):
     monkeypatch.setattr(git_io, "git_log", lambda *a, **k: [_commit(body="  v1\n  v2")])
     assert "No commit poems" in wrapped.wrapped(top=0, fmt="md")
+
+
+def test_wrapped_prefers_history_when_present(monkeypatch):
+    entries = [
+        {
+            "subject": "feat: hist",
+            "verse": "history verse a\nhistory verse b",
+            "ts": "2026-06-15T00:00:00+00:00",
+            "author": "Lonkins",
+            "commit": None,
+        }
+    ]
+    monkeypatch.setattr(history, "load", lambda: entries)
+
+    def no_git_log(*args, **kwargs):
+        raise AssertionError("git_log must not be called when history is present")
+
+    monkeypatch.setattr(git_io, "git_log", no_git_log)
+    out = wrapped.wrapped(fmt="md")
+    assert "feat: hist" in out and "history verse a" in out
+
+
+def test_wrapped_since_forces_git_log_over_history(monkeypatch):
+    monkeypatch.setattr(history, "load", lambda: [{"subject": "x", "verse": "y"}])
+    monkeypatch.setattr(
+        git_io, "git_log", lambda *a, **k: [_commit(subject="feat: fromlog", body="  log verse")]
+    )
+    out = wrapped.wrapped(rev_range="v1..HEAD", fmt="md")
+    assert "feat: fromlog" in out  # --since bypasses the flat history log
 
 
 # --- git_io.git_log --------------------------------------------------------

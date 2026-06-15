@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass
 from typing import List, Optional
 
-from . import git_io
+from . import git_io, history
 
 # Lines that mark a bullet/numbered list item (so we don't mistake a markdown
 # list's hanging-indented continuation lines for a verse).
@@ -188,7 +188,40 @@ def render_html(poems: List[Poem]) -> str:
     return _PAGE.replace("__COUNT__", str(len(poems))).replace("__BODY__", body)
 
 
-def wrapped(rev_range: Optional[str] = None, top: int = 10, fmt: str = "md") -> str:
-    """Build the digest: scan history, collect poems, render md/html."""
-    poems = collect(git_io.git_log(rev_range))[: max(0, top)]
+def _poems_from_history(entries: List[dict]) -> List[Poem]:
+    """Build poems from recorded history entries (precise, no extraction)."""
+    poems = []
+    for entry in entries:
+        verse = (entry.get("verse") or "").strip()
+        if not verse:
+            continue
+        poems.append(
+            Poem(
+                subject=entry.get("subject") or "",
+                verse=verse,
+                short_hash=(entry.get("commit") or "local")[:9],
+                date=(entry.get("ts") or "")[:10],
+                author=entry.get("author") or entry.get("provider") or "",
+                score=_score(verse),
+            )
+        )
+    poems.sort(key=lambda p: p.score, reverse=True)
+    return poems
+
+
+def wrapped(
+    rev_range: Optional[str] = None,
+    top: int = 10,
+    fmt: str = "md",
+    use_history: bool = True,
+) -> str:
+    """Build the digest: collect poems (history if recorded, else git log), render.
+
+    A ``--since`` range forces git log (history is a flat generation log with no
+    commit-range semantics). Otherwise recorded history is preferred when present
+    because it's exact; absent it, we reconstruct from git log.
+    """
+    entries = history.load() if (use_history and rev_range is None) else []
+    poems = _poems_from_history(entries) if entries else collect(git_io.git_log(rev_range))
+    poems = poems[: max(0, top)]
     return render_html(poems) if fmt == "html" else render_markdown(poems)

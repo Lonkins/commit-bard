@@ -42,6 +42,7 @@ class Config:
     mode: str = "dual"  # "dual" | "verse" | "plain"
     random_style: bool = False
     max_diff_chars: int = 6000
+    history: bool = False  # opt-in: log generated poems to .git/commit-bard/
     # [provider] (non-secret prefs only; keys live in the environment)
     provider: str = ""  # "" -> auto-detect in provider.resolve()
     model: str = ""
@@ -85,6 +86,7 @@ _TOML_MAP = {
     "mode": ("bard", "mode"),
     "random_style": ("bard", "random_style"),
     "max_diff_chars": ("bard", "max_diff_chars"),
+    "history": ("bard", "history"),
     "provider": ("provider", "provider"),
     "model": ("provider", "model"),
     "base_url": ("provider", "base_url"),
@@ -128,6 +130,8 @@ def _env_overrides() -> Dict[str, Any]:
         overrides["mode"] = env["COMMIT_BARD_MODE"]
     if "COMMIT_BARD_RANDOM_STYLE" in env:
         overrides["random_style"] = env["COMMIT_BARD_RANDOM_STYLE"].lower() in _TRUTHY
+    if "COMMIT_BARD_HISTORY" in env:
+        overrides["history"] = env["COMMIT_BARD_HISTORY"].lower() in _TRUTHY
     if "COMMIT_BARD_MAX_DIFF_CHARS" in env:
         try:
             overrides["max_diff_chars"] = int(env["COMMIT_BARD_MAX_DIFF_CHARS"])

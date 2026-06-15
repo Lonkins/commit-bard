@@ -77,6 +77,21 @@ def test_verse_mode_returns_corpus_verse(clean_env):
     assert out in mock_corpus.CORPUS["haiku"]
 
 
+def test_compose_detailed_exposes_parts_per_mode(clean_env):
+    style = styles.get_style("haiku")
+
+    verse = compose.compose_detailed(style, styles.SAMPLE_DIFF, mode="verse")
+    assert verse.mode == "verse" and verse.subject == "" and verse.verse == verse.message
+
+    plain = compose.compose_detailed(style, styles.SAMPLE_DIFF, mode="plain")
+    assert plain.mode == "plain" and plain.verse == "" and plain.subject == plain.message
+
+    dual = compose.compose_detailed(style, styles.SAMPLE_DIFF, mode="dual")
+    assert dual.mode == "dual"
+    assert ":" in dual.subject and not dual.subject.startswith(" ")  # clean subject
+    assert dual.verse and dual.message.startswith(dual.subject)
+
+
 def test_dual_subject_counts_all_files_despite_truncation(clean_env):
     # Subject synthesis must see the FULL diff, not the truncated one.
     files = []

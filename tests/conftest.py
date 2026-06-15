@@ -13,6 +13,7 @@ _STEERING_VARS = (
     "COMMIT_BARD_MODE",
     "COMMIT_BARD_RANDOM_STYLE",
     "COMMIT_BARD_MAX_DIFF_CHARS",
+    "COMMIT_BARD_HISTORY",
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
 )
@@ -36,7 +37,10 @@ def hermetic_config(monkeypatch, tmp_path):
     Point XDG at an empty tmp dir and stub the repo-config lookup so the suite
     is hermetic on every interpreter.
     """
-    from commit_bard import config
+    from commit_bard import config, history
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     monkeypatch.setattr(config, "_repo_config_path", lambda: None)
+    # Poem history is inert by default so it can never leak between tests; the
+    # history tests override _history_path to point at a temp file.
+    monkeypatch.setattr(history, "_history_path", lambda: None)

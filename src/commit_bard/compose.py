@@ -16,6 +16,7 @@ diff's shape so a usable message is always produced.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -213,7 +214,17 @@ def _chat_verse(
     return postprocess(raw)
 
 
-def compose(
+@dataclass(frozen=True)
+class Composed:
+    """A generated message plus its parts (for history/logging)."""
+
+    message: str  # the full text to write/print
+    subject: str  # conventional subject ("" in verse mode)
+    verse: str  # the verse ("" in plain mode)
+    mode: str
+
+
+def compose_detailed(
     style: Style,
     diff: str,
     *,
@@ -223,8 +234,8 @@ def compose(
     max_tokens: int = 300,
     timeout_s: int = 12,
     config: "provider.ProviderConfig | None" = None,
-) -> str:
-    """Generate a commit message for ``style``/``mode`` from ``diff``.
+) -> Composed:
+    """Like :func:`compose` but returns the message AND its subject/verse parts.
 
     Raises ``provider.ProviderError`` if a real backend fails; the mock backend
     never raises. Callers (CLI/hook) handle graceful fallback via
@@ -236,45 +247,53 @@ def compose(
     cfg = config or provider.resolve()
 
     if mode == "verse":
-        return _chat_verse(style, truncated, cfg, temperature, max_tokens, timeout_s)
+        verse = _chat_verse(style, truncated, cfg, temperature, max_tokens, timeout_s)
+        return Composed(message=verse, subject="", verse=verse, mode="verse")
 
     if mode == "plain":
         if cfg.provider == "mock":
-            return synthesize_subject(diff)
-        raw = provider.chat(
-            PLAIN_SYSTEM,
-            build_plain_prompt(truncated),
-            temperature=0.4,
-            max_tokens=80,
-            timeout_s=timeout_s,
-            config=cfg,
-        )
-        return _enforce_subject_len(postprocess(raw))
+            subject = synthesize_subject(diff)
+        else:
+            raw = provider.chat(
+                PLAIN_SYSTEM,
+                build_plain_prompt(truncated),
+                temperature=0.4,
+                max_tokens=80,
+                timeout_s=timeout_s,
+                config=cfg,
+            )
+            subject = _enforce_subject_len(postprocess(raw))
+        return Composed(message=subject, subject=subject, verse="", mode="plain")
 
     # dual (default)
     if cfg.provider == "mock":
         subject = synthesize_subject(diff)
         verse = _chat_verse(style, truncated, cfg, temperature, max_tokens, timeout_s)
-        return _assemble_dual(subject, verse)
-
-    raw = postprocess(
-        provider.chat(
-            SYSTEM_PROMPT,
-            build_dual_prompt(style, truncated),
-            temperature=temperature,
-            max_tokens=max_tokens,
-            timeout_s=timeout_s,
-            config=cfg,
+    else:
+        raw = postprocess(
+            provider.chat(
+                SYSTEM_PROMPT,
+                build_dual_prompt(style, truncated),
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout_s=timeout_s,
+                config=cfg,
+            )
         )
-    )
-    subject, verse = _parse_dual(raw)
-    if subject is None:
-        subject = synthesize_subject(diff)
-    if not verse.strip():
-        # Sentinel present but empty body (or whole reply was the subject):
-        # take a second pass for the verse so dual never collapses to plain.
-        verse = _chat_verse(style, truncated, cfg, temperature, max_tokens, timeout_s)
-    return _assemble_dual(_enforce_subject_len(subject), verse)
+        subject, verse = _parse_dual(raw)
+        if subject is None:
+            subject = synthesize_subject(diff)
+        subject = _enforce_subject_len(subject)
+        if not verse.strip():
+            # Sentinel present but empty body (or whole reply was the subject):
+            # take a second pass for the verse so dual never collapses to plain.
+            verse = _chat_verse(style, truncated, cfg, temperature, max_tokens, timeout_s)
+    return Composed(message=_assemble_dual(subject, verse), subject=subject, verse=verse, mode="dual")
+
+
+def compose(style: Style, diff: str, **kwargs) -> str:
+    """Generate a commit message for ``style``/``mode`` from ``diff``."""
+    return compose_detailed(style, diff, **kwargs).message
 
 
 def fallback_plain(diff: str) -> str:

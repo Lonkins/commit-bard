@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 336" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" role="img" aria-label="Terminal demo: running git commit produces a conventional subject line plus a haiku.">
+  <rect x="1" y="1" width="718" height="334" rx="14" fill="#12141c" stroke="#2a2e3a"/>
+  <!-- title bar -->
+  <circle cx="26" cy="24" r="6" fill="#ff5f56"/>
+  <circle cx="46" cy="24" r="6" fill="#ffbd2e"/>
+  <circle cx="66" cy="24" r="6" fill="#27c93f"/>
+  <text x="360" y="28" text-anchor="middle" font-size="13" fill="#6b7280">commit-bard</text>
+  <line x1="1" y1="46" x2="719" y2="46" stroke="#2a2e3a"/>
+  <!-- prompt -->
+  <text x="28" y="88" font-size="15.5"><tspan fill="#27c93f">$ </tspan><tspan fill="#cdd3de">git commit</tspan><tspan fill="#3a3f4b">  # the Bard fills in the message</tspan></text>
+  <!-- conventional subject -->
+  <text x="28" y="128" font-size="15.5" fill="#e8a55c">fix(parser): skip comment tokens during scan</text>
+  <!-- verse (serif, for character) -->
+  <text x="46" y="172" font-size="19" font-style="italic" font-family="Georgia, 'Times New Roman', serif" fill="#ded7c7">Comments fall like leaves—</text>
+  <text x="46" y="200" font-size="19" font-style="italic" font-family="Georgia, 'Times New Roman', serif" fill="#ded7c7">the parser walks a clean path,</text>
+  <text x="46" y="228" font-size="19" font-style="italic" font-family="Georgia, 'Times New Roman', serif" fill="#ded7c7">green tests rise at dawn.</text>
+  <!-- caption -->
+  <text x="28" y="296" font-size="12.5" fill="#6b7280">dual mode · a clean Conventional-Commit subject, with the verse in the body</text>
+</svg>

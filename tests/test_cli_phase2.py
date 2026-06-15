@@ -4,7 +4,20 @@ import subprocess
 
 import pytest
 
-from commit_bard import cli, git_io, mock_corpus, styles
+from commit_bard import cli, git_io, history, mock_corpus, styles
+
+_REAL_DIFF = "diff --git a/x.py b/x.py\nnew file mode 100644\n--- /dev/null\n+++ b/x.py\n@@ -0,0 +1 @@\n+x\n"
+
+
+def _capture_records(monkeypatch):
+    calls = []
+    monkeypatch.setattr(history, "record", lambda entry, enabled: calls.append(entry))
+    return calls
+
+
+def _stub_real_staged_diff(monkeypatch):
+    monkeypatch.setattr(git_io, "in_git_repo", lambda: True)
+    monkeypatch.setattr(git_io, "staged_diff", lambda: _REAL_DIFF)
 
 
 def test_dual_flag_yields_subject_then_verse(clean_env, capsys):
@@ -99,6 +112,52 @@ def test_diff_file_missing_returns_runtime_error(clean_env, tmp_path, capsys):
     rc = cli.main(["--diff-file", str(tmp_path / "nope.diff"), "--mode", "plain"])
     assert rc == 1
     assert "Could not read diff file" in capsys.readouterr().err
+
+
+# --- history recording gate -----------------------------------------------
+
+
+def test_records_real_diff_when_history_enabled(clean_env, monkeypatch):
+    calls = _capture_records(monkeypatch)
+    clean_env.setenv("COMMIT_BARD_HISTORY", "1")
+    _stub_real_staged_diff(monkeypatch)
+    rc = cli.main(["--style", "haiku"])
+    assert rc == 0
+    assert len(calls) == 1
+    entry = calls[0]
+    assert entry["mode"] in ("dual", "verse", "plain")
+    assert "subject" in entry and "verse" in entry
+
+
+def test_does_not_record_when_history_disabled(clean_env, monkeypatch):
+    calls = _capture_records(monkeypatch)  # history off by default (clean_env)
+    _stub_real_staged_diff(monkeypatch)
+    cli.main(["--style", "haiku"])
+    assert calls == []
+
+
+def test_no_history_flag_suppresses_recording(clean_env, monkeypatch):
+    calls = _capture_records(monkeypatch)
+    clean_env.setenv("COMMIT_BARD_HISTORY", "1")
+    _stub_real_staged_diff(monkeypatch)
+    cli.main(["--style", "haiku", "--no-history"])
+    assert calls == []
+
+
+def test_sample_does_not_record(clean_env, monkeypatch):
+    calls = _capture_records(monkeypatch)
+    clean_env.setenv("COMMIT_BARD_HISTORY", "1")
+    cli.main(["--sample", "--style", "haiku"])
+    assert calls == []
+
+
+def test_diff_file_does_not_record(clean_env, tmp_path, monkeypatch):
+    calls = _capture_records(monkeypatch)
+    clean_env.setenv("COMMIT_BARD_HISTORY", "1")
+    d = tmp_path / "d.diff"
+    d.write_text(_REAL_DIFF)
+    cli.main(["--diff-file", str(d), "--mode", "plain"])
+    assert calls == []
 
 
 def test_hook_flag_routes_and_always_returns_zero(clean_env, tmp_path, monkeypatch):

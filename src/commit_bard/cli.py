@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from . import __version__, compose, config, git_io, hook, provider, styles, wrapped
+from . import __version__, compose, config, git_io, history, hook, provider, styles, wrapped
 
 _PROG = "commit-bard"
 _MODES = ("dual", "verse", "plain")
@@ -64,6 +64,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--diff-file",
         metavar="PATH",
         help="read the diff from a file (or - for stdin) instead of git (handy in CI)",
+    )
+    parser.add_argument(
+        "--no-history",
+        action="store_true",
+        help="don't record this poem to local history even if enabled",
     )
     # Internal: invoked by the installed git hook. Hidden from --help.
     parser.add_argument("--hook", metavar="MSGFILE", help=argparse.SUPPRESS)
@@ -146,10 +151,10 @@ def _compose_or_fallback(
     mode: str,
     cfg: config.Config,
     prov_cfg: provider.ProviderConfig,
-) -> str:
+) -> compose.Composed:
     """Compose a message, gracefully degrading to a plain line on provider failure."""
     try:
-        return compose.compose(
+        return compose.compose_detailed(
             style, diff, mode=mode, max_diff_chars=cfg.max_diff_chars, config=prov_cfg
         )
     except provider.ProviderError as exc:
@@ -157,7 +162,22 @@ def _compose_or_fallback(
             f"# (provider error: {exc}; falling back to a plain message)",
             file=sys.stderr,
         )
-        return compose.fallback_plain(diff)
+        subject = compose.fallback_plain(diff)
+        return compose.Composed(message=subject, subject=subject, verse="", mode="plain")
+
+
+def _maybe_record(composed: compose.Composed, prov_cfg: provider.ProviderConfig, enabled: bool) -> None:
+    history.record(
+        {
+            "commit": None,
+            "mode": composed.mode,
+            "subject": composed.subject,
+            "verse": composed.verse,
+            "author": git_io.committer_name(),
+            "provider": prov_cfg.provider,
+        },
+        enabled=enabled,
+    )
 
 
 def _run_single(
@@ -166,11 +186,14 @@ def _run_single(
     mode: str,
     cfg: config.Config,
     prov_cfg: provider.ProviderConfig,
+    record: bool = False,
 ) -> int:
     style = styles.get_style(style_name)
-    message = _compose_or_fallback(style, diff, mode, cfg, prov_cfg)
+    composed = _compose_or_fallback(style, diff, mode, cfg, prov_cfg)
     _emit_mock_notice(prov_cfg)
-    print(message)
+    print(composed.message)
+    if record:
+        _maybe_record(composed, prov_cfg, enabled=True)
     return 0
 
 
@@ -181,11 +204,11 @@ def _run_sample_palette(
     _emit_mock_notice(prov_cfg)
     for index, name in enumerate(names):
         style = styles.get_style(name)
-        message = _compose_or_fallback(style, diff, mode, cfg, prov_cfg)
+        composed = _compose_or_fallback(style, diff, mode, cfg, prov_cfg)
         if index:
             print()
         print(f"── {name} ──")
-        print(message)
+        print(composed.message)
     return 0
 
 
@@ -265,9 +288,17 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     prov_cfg = provider.resolve(provider=args.provider, model=args.model)
 
+    # Record only real generations against the working tree's staged diff — not
+    # the --sample demo or a piped --diff-file, and only if history is on.
+    record_ok = (
+        cfg.history
+        and not args.no_history
+        and args.sample is None
+        and not args.diff_file
+    )
     if args.sample is not None and args.sample > 1:
         return _run_sample_palette(args.sample, diff, mode, cfg, prov_cfg)
-    return _run_single(style_name, diff, mode, cfg, prov_cfg)
+    return _run_single(style_name, diff, mode, cfg, prov_cfg, record=record_ok)
 
 
 if __name__ == "__main__":  # pragma: no cover

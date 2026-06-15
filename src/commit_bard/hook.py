@@ -18,7 +18,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Tuple
 
-from . import compose, config, git_io, provider, styles
+from . import compose, config, git_io, history, provider, styles
 
 HOOK_NAME = "prepare-commit-msg"
 _BACKUP_SUFFIX = ".bard.bak"
@@ -229,8 +229,9 @@ def run_hook(msg_file: str) -> int:
             model=cfg.model or None,
             base_url=cfg.base_url or None,
         )
+        composed = None
         try:
-            message = compose.compose(
+            composed = compose.compose_detailed(
                 _select_style(cfg),
                 diff,
                 mode=cfg.mode,
@@ -238,6 +239,7 @@ def run_hook(msg_file: str) -> int:
                 timeout_s=cfg.hook_timeout_s,
                 config=prov_cfg,
             )
+            message = composed.message
         except Exception:
             if cfg.hook_on_error == "skip":
                 return 0
@@ -245,6 +247,19 @@ def run_hook(msg_file: str) -> int:
 
         if message and message.strip():
             _prepend_to_msg_file(Path(msg_file), message)
+            if composed is not None:
+                history.record(
+                    {
+                        "commit": None,  # sha not known at prepare-commit-msg time
+                        "style": cfg.style,
+                        "mode": composed.mode,
+                        "subject": composed.subject,
+                        "verse": composed.verse,
+                        "author": git_io.committer_name(),
+                        "provider": prov_cfg.provider,
+                    },
+                    enabled=cfg.history,
+                )
     except Exception:
         # Absolutely never block a commit, whatever goes wrong.
         return 0
