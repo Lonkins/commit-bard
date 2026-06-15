@@ -72,6 +72,35 @@ def test_cli_flags_beat_env_and_config(clean_env, capsys):
     assert out in mock_corpus.CORPUS["noir"]  # flag style+mode won over env
 
 
+def test_diff_file_is_read_from_path(clean_env, tmp_path, capsys):
+    d = tmp_path / "d.diff"
+    d.write_text(
+        "diff --git a/x.py b/x.py\nnew file mode 100644\n--- /dev/null\n"
+        "+++ b/x.py\n@@ -0,0 +1 @@\n+x\n"
+    )
+    rc = cli.main(["--diff-file", str(d), "--mode", "plain"])
+    out = capsys.readouterr().out.strip()
+    assert rc == 0
+    assert out.startswith("feat")  # synthesized from the file's diff (new source file)
+
+
+def test_diff_file_is_read_from_stdin(clean_env, monkeypatch, capsys):
+    import io
+
+    diff = "diff --git a/tests/test_y.py b/tests/test_y.py\n@@ -1 +1 @@\n-a\n+b\n"
+    monkeypatch.setattr("sys.stdin", io.StringIO(diff))
+    rc = cli.main(["--diff-file", "-", "--mode", "plain"])
+    out = capsys.readouterr().out.strip()
+    assert rc == 0
+    assert out.startswith("test")  # tests/ path -> test type
+
+
+def test_diff_file_missing_returns_runtime_error(clean_env, tmp_path, capsys):
+    rc = cli.main(["--diff-file", str(tmp_path / "nope.diff"), "--mode", "plain"])
+    assert rc == 1
+    assert "Could not read diff file" in capsys.readouterr().err
+
+
 def test_hook_flag_routes_and_always_returns_zero(clean_env, tmp_path, monkeypatch):
     monkeypatch.setattr(git_io, "staged_diff", lambda: styles.SAMPLE_DIFF)
     msg = tmp_path / "MSG"

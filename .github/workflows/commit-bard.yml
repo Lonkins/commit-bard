@@ -1,0 +1,40 @@
+name: Commit Bard
+
+# Versify each pull request's diff and post it to the run summary. Works on
+# forks with no secrets (falls back to offline mock mode) and never fails the
+# check — it's a joy layer, not a gate.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  versify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need the base branch to diff against
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install commit-bard
+        run: python -m pip install -e .
+      - name: Versify the PR diff
+        env:
+          # Provide a key via repo secrets for diff-aware verse; absent -> mock.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # Via env (not inline ${{ }}) so the ref is data, never shell syntax.
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git diff "origin/${BASE_REF}...HEAD" > /tmp/pr.diff
+          {
+            echo "## 🎵 Commit Bard"
+            echo
+            echo '```'
+            commit-bard --diff-file /tmp/pr.diff --mode dual 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

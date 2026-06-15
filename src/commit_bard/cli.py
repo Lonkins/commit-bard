@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 from typing import List, Optional
 
-from . import __version__, compose, config, git_io, hook, provider, styles
+from . import __version__, compose, config, git_io, hook, provider, styles, wrapped
 
 _PROG = "commit-bard"
 _MODES = ("dual", "verse", "plain")
@@ -59,6 +60,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--provider", metavar="P", help="one-off provider override")
     parser.add_argument("--model", metavar="M", help="one-off model override")
+    parser.add_argument(
+        "--diff-file",
+        metavar="PATH",
+        help="read the diff from a file (or - for stdin) instead of git (handy in CI)",
+    )
     # Internal: invoked by the installed git hook. Hidden from --help.
     parser.add_argument("--hook", metavar="MSGFILE", help=argparse.SUPPRESS)
     parser.add_argument("--version", action="version", version=f"{_PROG} {__version__}")
@@ -66,6 +72,15 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("install-hook", help="install the prepare-commit-msg hook")
     subparsers.add_parser("uninstall-hook", help="remove the prepare-commit-msg hook")
+
+    wrapped_p = subparsers.add_parser(
+        "wrapped", help="collect the best commit poems from history into a digest"
+    )
+    wrapped_p.add_argument("--since", metavar="REF", help="only commits after this ref")
+    wrapped_p.add_argument("--top", type=int, default=10, help="how many poems (default 10)")
+    wrapped_p.add_argument(
+        "--format", choices=("md", "html"), default="md", help="output format"
+    )
     return parser
 
 
@@ -94,6 +109,14 @@ def _get_diff(args: argparse.Namespace) -> Optional[str]:
     """Return the diff to versify, or None if the caller should stop (msg on stderr)."""
     if args.sample is not None:
         return styles.SAMPLE_DIFF
+    if args.diff_file:
+        if args.diff_file == "-":
+            return sys.stdin.read()
+        try:
+            return Path(args.diff_file).read_text(errors="replace")
+        except OSError as exc:
+            print(f"Could not read diff file: {exc}", file=sys.stderr)
+            return None
     if not git_io.in_git_repo():
         print(
             "Not inside a git repository. Stage some changes in a repo, "
@@ -195,6 +218,15 @@ def _cmd_uninstall_hook() -> int:
     return 0
 
 
+def _cmd_wrapped(args: argparse.Namespace) -> int:
+    if not git_io.in_git_repo():
+        print("Not inside a git repository — `wrapped` reads commit history.", file=sys.stderr)
+        return 1
+    rev_range = f"{args.since}..HEAD" if args.since else None
+    print(wrapped.wrapped(rev_range=rev_range, top=args.top, fmt=args.format))
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -204,6 +236,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _cmd_install_hook()
     if args.command == "uninstall-hook":
         return _cmd_uninstall_hook()
+    if args.command == "wrapped":
+        return _cmd_wrapped(args)
 
     # Internal hook entry — always exits 0, never blocks a commit.
     if args.hook:
