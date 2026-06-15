@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "commit-bard"
-version = "0.1.0"
+dynamic = ["version"]  # single-sourced from commit_bard.__version__
 description = "Your staged diff, returned as verse — a joy layer on top of AI commit messages."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -37,6 +37,9 @@ commit-bard = "commit_bard.cli:main"
 [project.urls]
 Homepage = "https://github.com/Lonkins/commit-bard"
 Source = "https://github.com/Lonkins/commit-bard"
+
+[tool.setuptools.dynamic]
+version = { attr = "commit_bard.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

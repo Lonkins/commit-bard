@@ -55,6 +55,12 @@ def staged_diff() -> str:
     return result.stdout
 
 
+def committer_name() -> str:
+    """The configured ``user.name`` for this repo (or "" if unset/failed)."""
+    result = _run_git(["config", "user.name"])
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
 def staged_stat() -> str:
     """Return ``git diff --staged --stat`` (the shape of the change)."""
     result = _run_git(["diff", "--staged", "--stat", "--no-color"])

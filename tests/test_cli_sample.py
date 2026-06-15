@@ -98,7 +98,7 @@ def test_provider_error_falls_back_to_plain(clean_env, capsys, monkeypatch):
     def boom(*args, **kwargs):
         raise provider.ProviderError("boom")
 
-    monkeypatch.setattr(compose, "compose", boom)
+    monkeypatch.setattr(compose, "compose_detailed", boom)
     rc = cli.main(["--sample", "--style", "haiku"])
     captured = capsys.readouterr()
     assert rc == 0
@@ -110,7 +110,7 @@ def test_palette_provider_error_falls_back_to_plain(clean_env, capsys, monkeypat
     def boom(*args, **kwargs):
         raise provider.ProviderError("boom")
 
-    monkeypatch.setattr(compose, "compose", boom)
+    monkeypatch.setattr(compose, "compose_detailed", boom)
     rc = cli.main(["--sample", "2"])
     captured = capsys.readouterr()
     assert rc == 0

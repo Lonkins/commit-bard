@@ -43,6 +43,12 @@ def test_env_random_style_truthy_and_falsey(clean_env):
     assert config.load().random_style is False
 
 
+def test_history_defaults_off_and_env_toggles(clean_env):
+    assert config.load().history is False
+    clean_env.setenv("COMMIT_BARD_HISTORY", "true")
+    assert config.load().history is True
+
+
 def test_env_provider_model_base_url(clean_env):
     clean_env.setenv("COMMIT_BARD_PROVIDER", "ollama")
     clean_env.setenv("COMMIT_BARD_MODEL", "my-model")

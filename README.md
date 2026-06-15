@@ -4,6 +4,8 @@
 
 [![tests](https://github.com/Lonkins/commit-bard/actions/workflows/tests.yml/badge.svg)](https://github.com/Lonkins/commit-bard/actions/workflows/tests.yml)
 
+![Git Commit Bard turning a staged diff into a conventional subject line plus a haiku](assets/demo.svg)
+
 Git Commit Bard reads your staged diff and writes the commit message with
 literary flair — haiku, sea shanty, limerick, epic verse, ballad, pirate,
 corporate-buzzword, noir. Whimsy is opt-in. It runs with **zero setup** in an
@@ -99,9 +101,16 @@ commit-bard wrapped --top 20 --since v1.0 # tune the range and count
 commit-bard wrapped --format html > poems.html   # a standalone gallery page
 ```
 
-It reads `git log` and pulls the verse out of dual-mode commits — no extra
-setup or history file required. The HTML output is a self-contained page (open
-it, or publish it to GitHub Pages as a gallery).
+By default it reads `git log` and pulls the verse out of dual-mode commits — no
+extra setup required. The HTML output is a self-contained page (open it, or
+publish it to GitHub Pages as a gallery).
+
+**Optional poem history.** Turn on `[bard] history = true` (or
+`COMMIT_BARD_HISTORY=1`) and each generated message is appended as one JSON line
+to `.git/commit-bard/history.jsonl` — local to your clone, never committed.
+It's **off by default** for privacy. When present, `wrapped` prefers this exact
+record over reconstructing from `git log` (a `--since` range still uses git
+log). Pass `--no-history` to skip recording a single run.
 
 ## GitHub Action
 
@@ -149,6 +158,7 @@ env → flags. **Never put API keys here.**
 style = "shanty"
 mode  = "dual"          # dual | verse | plain
 max_diff_chars = 6000   # big diffs are summarized past this budget
+history = false         # opt-in: log generated poems to .git/commit-bard/
 
 [hook]
 on_error  = "plain"     # "plain" | "skip" — the hook never blocks a commit

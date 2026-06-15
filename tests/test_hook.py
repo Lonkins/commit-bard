@@ -38,7 +38,7 @@ def test_run_hook_no_staged_diff_leaves_file_untouched(clean_env, tmp_path, monk
 
 def test_run_hook_on_error_plain_writes_fallback(clean_env, tmp_path, monkeypatch):
     monkeypatch.setattr(git_io, "staged_diff", lambda: styles.SAMPLE_DIFF)
-    monkeypatch.setattr(compose, "compose", _raise_provider_error)
+    monkeypatch.setattr(compose, "compose_detailed", _raise_provider_error)
     msg = tmp_path / "m"
     msg.write_text("")
     assert hook.run_hook(str(msg)) == 0
@@ -47,7 +47,7 @@ def test_run_hook_on_error_plain_writes_fallback(clean_env, tmp_path, monkeypatc
 
 def test_run_hook_on_error_skip_leaves_file(clean_env, tmp_path, monkeypatch):
     monkeypatch.setattr(git_io, "staged_diff", lambda: styles.SAMPLE_DIFF)
-    monkeypatch.setattr(compose, "compose", _raise_provider_error)
+    monkeypatch.setattr(compose, "compose_detailed", _raise_provider_error)
     monkeypatch.setattr(config, "load", lambda: replace(config.Config(), hook_on_error="skip"))
     msg = tmp_path / "m"
     msg.write_text("ORIGINAL")
