@@ -2,15 +2,18 @@
 
 *Your staged diff, returned as verse. The commit message as a tiny creative artifact.*
 
+[![tests](https://github.com/Lonkins/commit-bard/actions/workflows/tests.yml/badge.svg)](https://github.com/Lonkins/commit-bard/actions/workflows/tests.yml)
+
 Git Commit Bard reads your staged diff and writes the commit message with
 literary flair — haiku, sea shanty, limerick, epic verse, ballad, pirate,
 corporate-buzzword, noir. Whimsy is opt-in. It runs with **zero setup** in an
 offline mock mode, and calls a real model the moment you add an API key.
 
-> **Status: alpha.** The CLI, the default **dual mode** (a clean
-> Conventional-Commit subject line with the verse in the body), and the
-> `prepare-commit-msg` **git hook** all work today. A repo "wrapped" digest and
-> a shareable gallery are still to come.
+> **Status: alpha.** Working today: the CLI, the default **dual mode** (a clean
+> Conventional-Commit subject line with the verse in the body), the
+> `prepare-commit-msg` **git hook**, a repo **"wrapped"** digest (Markdown or a
+> standalone HTML gallery), and a **GitHub Action** that versifies PRs. Not yet
+> on PyPI.
 
 ## Try it in 30 seconds
 
@@ -84,6 +87,34 @@ commit-bard uninstall-hook    # remove it (restores your backup)
 
 It leaves merges, squashes, amends, and `-m`/`-F` commits alone, and is aware of
 `core.hooksPath` (Husky/pre-commit).
+
+## Repo "wrapped"
+
+Look back at your repo's commit poems and collect the best into a shareable
+digest — your repo, in verse.
+
+```bash
+commit-bard wrapped                       # Markdown digest of the top poems
+commit-bard wrapped --top 20 --since v1.0 # tune the range and count
+commit-bard wrapped --format html > poems.html   # a standalone gallery page
+```
+
+It reads `git log` and pulls the verse out of dual-mode commits — no extra
+setup or history file required. The HTML output is a self-contained page (open
+it, or publish it to GitHub Pages as a gallery).
+
+## GitHub Action
+
+[`.github/workflows/commit-bard.yml`](.github/workflows/commit-bard.yml)
+versifies each pull request's diff and posts it to the run summary. It works on
+forks with no secrets (falls back to offline mock mode) and never fails the
+check. Add `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) as a repo secret for
+diff-aware verse. It uses `--diff-file`, which reads a diff from a file or stdin
+so you can wire the Bard into any pipeline:
+
+```bash
+git diff origin/main...HEAD | commit-bard --diff-file - --mode dual
+```
 
 ## Providers & configuration
 

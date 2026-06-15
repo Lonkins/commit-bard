@@ -12,6 +12,8 @@ callers handle gracefully (skip versifying), upholding the never-block rule.
 from __future__ import annotations
 
 import subprocess
+from dataclasses import dataclass
+from typing import List, Optional
 
 # Bound on any single git invocation. Generous for big repos, but finite.
 _GIT_TIMEOUT_S = 10
@@ -59,3 +61,57 @@ def staged_stat() -> str:
     if result.returncode != 0:
         return ""
     return result.stdout
+
+
+@dataclass(frozen=True)
+class Commit:
+    """One commit's metadata + message, for the 'wrapped' digest."""
+
+    hash: str
+    date: str  # ISO-8601 author date
+    author: str
+    subject: str
+    body: str
+
+
+# Field-separated, record-separated log so multiline bodies parse cleanly.
+_LOG_FORMAT = "%H%x1f%aI%x1f%an%x1f%s%x1f%b%x1e"
+
+
+def _parse_log(output: str) -> List[Commit]:
+    commits: List[Commit] = []
+    for record in output.split("\x1e"):
+        record = record.strip("\n")
+        if not record.strip():
+            continue
+        # maxsplit=4: a body containing a stray \x1f must land intact in parts[4].
+        parts = record.split("\x1f", 4)
+        if len(parts) < 5:
+            continue
+        commits.append(
+            Commit(
+                hash=parts[0].strip(),
+                date=parts[1].strip(),
+                author=parts[2].strip(),
+                subject=parts[3].strip(),
+                body=parts[4].strip("\n"),
+            )
+        )
+    return commits
+
+
+def git_log(rev_range: Optional[str] = None, max_count: int = 2000) -> List[Commit]:
+    """Return recent commits (newest first), bounded by ``max_count``.
+
+    ``rev_range`` is an optional revision range like ``v1.0..HEAD``. Returns an
+    empty list if git fails (never raises).
+    """
+    args = ["log", "--no-color", f"--format={_LOG_FORMAT}"]
+    if max_count:
+        args.append(f"--max-count={max_count}")
+    if rev_range:
+        args.append(rev_range)
+    result = _run_git(args)
+    if result.returncode != 0:
+        return []
+    return _parse_log(result.stdout)
