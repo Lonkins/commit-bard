@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "commit-bard"
+version = "0.1.0"
+description = "Your staged diff, returned as verse — a joy layer on top of AI commit messages."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Tom Price" }]
+keywords = ["git", "commit", "ai", "haiku", "poetry", "cli", "hook", "conventional-commits"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Topic :: Artistic Software",
+]
+# Zero runtime dependencies is a feature, not an omission: it keeps
+# `pipx install` instant and the no-key mock demo truly offline.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+commit-bard = "commit_bard.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Lonkins/commit-bard"
+Source = "https://github.com/Lonkins/commit-bard"
+
+[tool.setuptools.packages.find]
+where = ["src"]
